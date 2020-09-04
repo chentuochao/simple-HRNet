@@ -1,3 +1,5 @@
+from collections import OrderedDict
+
 import cv2
 import numpy as np
 import torch
@@ -92,7 +94,8 @@ class SimpleHRNet:
         else:
             raise ValueError('Wrong model name.')
 
-        checkpoint = torch.load(checkpoint_path, map_location=self.device)
+        checkpoint_module = torch.load(checkpoint_path, map_location=self.device)
+        checkpoint = OrderedDict({key.replace("module.", ""): var for key, var in checkpoint_module.items()})
         if 'model' in checkpoint:
             self.model.load_state_dict(checkpoint['model'])
         else:
