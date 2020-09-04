@@ -38,7 +38,9 @@ def main(camera_id, filename, hrnet_m, hrnet_c, hrnet_j, hrnet_weights, hrnet_jo
     else:
         rotation_code = None
         if disable_vidgear:
-            video = cv2.VideoCapture(camera_id)
+            video = cv2.VideoCapture(camera_id, cv2.CAP_DSHOW)
+            video.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+            video.set(cv2.CAP_PROP_FRAME_HEIGHT, 360)
             assert video.isOpened()
         else:
             video = CamGear(camera_id).start()
@@ -87,7 +89,10 @@ def main(camera_id, filename, hrnet_m, hrnet_c, hrnet_j, hrnet_weights, hrnet_jo
             if frame is None:
                 break
 
+        t0 = time.time()
         pts = model.predict(frame)
+        t1 = time.time()
+        print(f"detection time: {t1 - t0}")
 
         if not disable_tracking:
             boxes, pts = pts
@@ -112,6 +117,7 @@ def main(camera_id, filename, hrnet_m, hrnet_c, hrnet_j, hrnet_weights, hrnet_jo
 
         else:
             person_ids = np.arange(len(pts), dtype=np.int32)
+        print(f"tracking time: {time.time() - t1}")
 
         for i, (pt, pid) in enumerate(zip(pts, person_ids)):
             frame = draw_points_and_skeleton(frame, pt, joints_dict()[hrnet_joints_set]['skeleton'], person_index=pid,

@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 import torch
+import time
 from torchvision.transforms import transforms
 
 from models.hrnet import HRNet
@@ -192,13 +193,20 @@ class SimpleHRNet:
                                 dtype=np.float32)
 
         else:
+            t0 = time.time()
             detections = self.detector.predict_single(image)
+            t1 = time.time()
+            print(f"Yolo time: {t1 - t0}")
 
-            nof_people = len(detections) if detections is not None else 0
+            # nof_people = len(detections) if detections is not None else 0
+            nof_people = 1 if detections is not None else 0
             boxes = np.empty((nof_people, 4), dtype=np.int32)
             images = torch.empty((nof_people, 3, self.resolution[0], self.resolution[1]))  # (height, width)
             heatmaps = np.zeros((nof_people, self.nof_joints, self.resolution[0] // 4, self.resolution[1] // 4),
                                 dtype=np.float32)
+
+            # only process the largest detection
+            max_size = float("-inf")
 
             if detections is not None:
                 for i, (x1, y1, x2, y2, conf, cls_conf, cls_pred) in enumerate(detections):
@@ -209,21 +217,23 @@ class SimpleHRNet:
 
                     # Adapt detections to match HRNet input aspect ratio (as suggested by xtyDoge in issue #14)
                     correction_factor = self.resolution[0] / self.resolution[1] * (x2 - x1) / (y2 - y1)
-                    if correction_factor > 1:
-                        # increase y side
-                        center = y1 + (y2 - y1) // 2
-                        length = int(round((y2 - y1) * correction_factor))
-                        y1 = max(0, center - length // 2)
-                        y2 = min(image.shape[0], center + length // 2)
-                    elif correction_factor < 1:
-                        # increase x side
-                        center = x1 + (x2 - x1) // 2
-                        length = int(round((x2 - x1) * 1 / correction_factor))
-                        x1 = max(0, center - length // 2)
-                        x2 = min(image.shape[1], center + length // 2)
+                    if correction_factor > max_size:
+                        if correction_factor > 1:
+                            # increase y side
+                            center = y1 + (y2 - y1) // 2
+                            length = int(round((y2 - y1) * correction_factor))
+                            y1 = max(0, center - length // 2)
+                            y2 = min(image.shape[0], center + length // 2)
+                        elif correction_factor < 1:
+                            # increase x side
+                            center = x1 + (x2 - x1) // 2
+                            length = int(round((x2 - x1) * 1 / correction_factor))
+                            x1 = max(0, center - length // 2)
+                            x2 = min(image.shape[1], center + length // 2)
 
-                    boxes[i] = [x1, y1, x2, y2]
-                    images[i] = self.transform(image[y1:y2, x1:x2, ::-1])
+                        boxes[0] = [x1, y1, x2, y2]
+                        images[0] = self.transform(image[y1:y2, x1:x2, ::-1])
+                    max_size = correction_factor
 
         if images.shape[0] > 0:
             images = images.to(self.device)
@@ -256,6 +266,7 @@ class SimpleHRNet:
 
         else:
             pts = np.empty((0, 0, 3), dtype=np.float32)
+        print(f"pose time: {time.time() - t1}")
 
         res = list()
         if self.return_heatmaps:
