@@ -211,13 +211,14 @@ class SimpleHRNet:
             # only process the largest detection
             max_size = float("-inf")
 
+
             if detections is not None:
                 for i, (x1, y1, x2, y2, conf, cls_conf, cls_pred) in enumerate(detections):
                     x1 = int(round(x1.item()))
                     x2 = int(round(x2.item()))
                     y1 = int(round(y1.item()))
                     y2 = int(round(y2.item()))
-
+                    
                     # Adapt detections to match HRNet input aspect ratio (as suggested by xtyDoge in issue #14)
                     correction_factor = self.resolution[0] / self.resolution[1] * (x2 - x1) / (y2 - y1)
                     if correction_factor > max_size:
@@ -283,6 +284,26 @@ class SimpleHRNet:
         else:
             return res[0]
 
+
+
+    def fix_detection(self, image_detections, images):
+        last_detection = None
+        image = images[0]
+        for d, detections in enumerate(image_detections):
+            if detections is not None and len(detections) > 0:
+                last_detection = detections.clone()
+            else:
+                print("Yolo warning no people detected!", d)
+                if last_detection == None:
+                    print("Yolo warning 2: first frame not detected", d)
+                    bound_len = min(image.shape[0], image.shape[1])
+                    detections = torch.Tensor([[0, 0, bound_len, bound_len,   1,   1,   0.0000]])
+                else:
+                    detections = last_detection
+                image_detections[d] = detections.clone()
+        
+        return image_detections
+
     def _predict_batch(self, images):
         if not self.multiperson:
             old_res = images[0].shape
@@ -313,23 +334,26 @@ class SimpleHRNet:
 
         else:
             image_detections = self.detector.predict(images)
-
+            image_detections = self.fix_detection(image_detections, images)
             base_index = 0
-            nof_people = int(np.sum([len(d) for d in image_detections if d is not None]))
+            nof_people = int(np.sum([len(d) for d in image_detections]))
             boxes = np.empty((nof_people, 4), dtype=np.int32)
             images_tensor = torch.empty((nof_people, 3, self.resolution[0], self.resolution[1]))  # (height, width)
             heatmaps = np.zeros((nof_people, self.nof_joints, self.resolution[0] // 4, self.resolution[1] // 4),
                                 dtype=np.float32)
-
+            
             for d, detections in enumerate(image_detections):
+                #print(d,detections)
                 image = images[d]
+                #print(image.shape)
                 if detections is not None and len(detections) > 0:
+
                     for i, (x1, y1, x2, y2, conf, cls_conf, cls_pred) in enumerate(detections):
                         x1 = int(round(x1.item()))
                         x2 = int(round(x2.item()))
                         y1 = int(round(y1.item()))
                         y2 = int(round(y2.item()))
-
+                        #print(x1,x2,y1,y2)
                         # Adapt detections to match HRNet input aspect ratio (as suggested by xtyDoge in issue #14)
                         correction_factor = self.resolution[0] / self.resolution[1] * (x2 - x1) / (y2 - y1)
                         if correction_factor > 1:
@@ -419,6 +443,7 @@ class SimpleHRNet:
                 pts = []
                 for _ in range(len(image_detections)):
                     pts.append(np.zeros((0, self.nof_joints, 3), dtype=np.float32))
+                #print(pts)
             else:
                 raise ValueError  # should never happen
 

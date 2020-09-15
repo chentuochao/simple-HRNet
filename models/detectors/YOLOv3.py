@@ -122,6 +122,7 @@ class YOLOv3:
 
     def predict(self, images, color_mode='BGR'):
         images_rescaled = prepare_data(images.copy(), color_mode=color_mode)
+        
         with torch.no_grad():
             images_rescaled = images_rescaled.to(self.device)
 
