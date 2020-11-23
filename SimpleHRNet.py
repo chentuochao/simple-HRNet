@@ -237,7 +237,7 @@ class SimpleHRNet:
 
                         boxes[0] = [x1, y1, x2, y2]
                         images[0] = self.transform(image[y1:y2, x1:x2, ::-1])
-                    max_size = correction_factor
+                        max_size = correction_factor
 
         if images.shape[0] > 0:
             images = images.to(self.device)
