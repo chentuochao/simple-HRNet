@@ -300,6 +300,7 @@ class SimpleHRNet:
                     detections = torch.Tensor([[0, 0, bound_len, bound_len,   1,   1,   0.0000]])
                 else:
                     detections = last_detection
+                detections[:, 4] = 0
                 image_detections[d] = detections.clone()
         
         return image_detections
@@ -335,19 +336,21 @@ class SimpleHRNet:
         else:
             image_detections = self.detector.predict(images)
             image_detections = self.fix_detection(image_detections, images)
-            base_index = 0
-            nof_people = int(np.sum([len(d) for d in image_detections]))
+            nof_people_actual = int(np.sum([len(d) for d in image_detections]))
+            nof_people = len(image_detections)
             boxes = np.empty((nof_people, 4), dtype=np.int32)
             images_tensor = torch.empty((nof_people, 3, self.resolution[0], self.resolution[1]))  # (height, width)
             heatmaps = np.zeros((nof_people, self.nof_joints, self.resolution[0] // 4, self.resolution[1] // 4),
                                 dtype=np.float32)
+            images_conf = torch.empty((nof_people))
             
             for d, detections in enumerate(image_detections):
                 #print(d,detections)
                 image = images[d]
                 #print(image.shape)
                 if detections is not None and len(detections) > 0:
-
+                    # only process the largest detection
+                    max_size = float("-inf")
                     for i, (x1, y1, x2, y2, conf, cls_conf, cls_pred) in enumerate(detections):
                         x1 = int(round(x1.item()))
                         x2 = int(round(x2.item()))
@@ -356,23 +359,25 @@ class SimpleHRNet:
                         #print(x1,x2,y1,y2)
                         # Adapt detections to match HRNet input aspect ratio (as suggested by xtyDoge in issue #14)
                         correction_factor = self.resolution[0] / self.resolution[1] * (x2 - x1) / (y2 - y1)
-                        if correction_factor > 1:
-                            # increase y side
-                            center = y1 + (y2 - y1) // 2
-                            length = int(round((y2 - y1) * correction_factor))
-                            y1 = max(0, center - length // 2)
-                            y2 = min(image.shape[0], center + length // 2)
-                        elif correction_factor < 1:
-                            # increase x side
-                            center = x1 + (x2 - x1) // 2
-                            length = int(round((x2 - x1) * 1 / correction_factor))
-                            x1 = max(0, center - length // 2)
-                            x2 = min(image.shape[1], center + length // 2)
+                        if correction_factor > max_size:
+                            if correction_factor > 1:
+                                # increase y side
+                                center = y1 + (y2 - y1) // 2
+                                length = int(round((y2 - y1) * correction_factor))
+                                y1 = max(0, center - length // 2)
+                                y2 = min(image.shape[0], center + length // 2)
+                            elif correction_factor < 1:
+                                # increase x side
+                                center = x1 + (x2 - x1) // 2
+                                length = int(round((x2 - x1) * 1 / correction_factor))
+                                x1 = max(0, center - length // 2)
+                                x2 = min(image.shape[1], center + length // 2)
 
-                        boxes[base_index + i] = [x1, y1, x2, y2]
-                        images_tensor[base_index + i] = self.transform(image[y1:y2, x1:x2, ::-1])
+                            boxes[d] = [x1, y1, x2, y2]
+                            images_tensor[d] = self.transform(image[y1:y2, x1:x2, ::-1])
+                            images_conf[d] = conf
+                            max_size = correction_factor
 
-                    base_index += len(detections)
 
             images = images_tensor
 
@@ -404,38 +409,8 @@ class SimpleHRNet:
                     pts[i, j, 0] = pt[0] * 1. / (self.resolution[0] // 4) * (boxes[i][3] - boxes[i][1]) + boxes[i][1]
                     pts[i, j, 1] = pt[1] * 1. / (self.resolution[1] // 4) * (boxes[i][2] - boxes[i][0]) + boxes[i][0]
                     pts[i, j, 2] = joint[pt]
-
-            if self.multiperson:
-                # re-add the removed batch axis (n)
-                if self.return_heatmaps:
-                    heatmaps_batch = []
-                if self.return_bounding_boxes:
-                    boxes_batch = []
-                pts_batch = []
-                index = 0
-                for detections in image_detections:
-                    if detections is not None:
-                        pts_batch.append(pts[index:index + len(detections)])
-                        if self.return_heatmaps:
-                            heatmaps_batch.append(heatmaps[index:index + len(detections)])
-                        if self.return_bounding_boxes:
-                            boxes_batch.append(boxes[index:index + len(detections)])
-                        index += len(detections)
-                    else:
-                        pts_batch.append(np.zeros((0, self.nof_joints, 3), dtype=np.float32))
-                        if self.return_heatmaps:
-                            heatmaps_batch.append(np.zeros((0, self.nof_joints, self.resolution[0] // 4,
-                                                            self.resolution[1] // 4), dtype=np.float32))
-                        if self.return_bounding_boxes:
-                            boxes_batch.append(np.zeros((0, 4), dtype=np.float32))
-                if self.return_heatmaps:
-                    heatmaps = heatmaps_batch
-                if self.return_bounding_boxes:
-                    boxes = boxes_batch
-                pts = pts_batch
-
-            else:
-                pts = np.expand_dims(pts, axis=1)
+            pts[images_conf < 0.0001, :, 2] = 0
+            pts = np.expand_dims(pts, axis=1)
 
         else:
             boxes = np.asarray([], dtype=np.int32)
