@@ -409,7 +409,7 @@ class SimpleHRNet:
                     pts[i, j, 0] = pt[0] * 1. / (self.resolution[0] // 4) * (boxes[i][3] - boxes[i][1]) + boxes[i][1]
                     pts[i, j, 1] = pt[1] * 1. / (self.resolution[1] // 4) * (boxes[i][2] - boxes[i][0]) + boxes[i][0]
                     pts[i, j, 2] = joint[pt]
-            pts[images_conf < 0.0001, :, 2] = 0
+            pts[images_conf.detach().cpu().numpy() < 0.0001, :, 2] = 0
             pts = np.expand_dims(pts, axis=1)
 
         else:
