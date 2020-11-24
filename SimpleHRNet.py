@@ -221,7 +221,8 @@ class SimpleHRNet:
                     
                     # Adapt detections to match HRNet input aspect ratio (as suggested by xtyDoge in issue #14)
                     correction_factor = self.resolution[0] / self.resolution[1] * (x2 - x1) / (y2 - y1)
-                    if correction_factor > max_size:
+                    size = (x2 - x1) * (y2 - y1)
+                    if size > max_size:
                         if correction_factor > 1:
                             # increase y side
                             center = y1 + (y2 - y1) // 2
@@ -237,7 +238,7 @@ class SimpleHRNet:
 
                         boxes[0] = [x1, y1, x2, y2]
                         images[0] = self.transform(image[y1:y2, x1:x2, ::-1])
-                        max_size = correction_factor
+                        max_size = size
 
         if images.shape[0] > 0:
             images = images.to(self.device)
@@ -359,7 +360,8 @@ class SimpleHRNet:
                         #print(x1,x2,y1,y2)
                         # Adapt detections to match HRNet input aspect ratio (as suggested by xtyDoge in issue #14)
                         correction_factor = self.resolution[0] / self.resolution[1] * (x2 - x1) / (y2 - y1)
-                        if correction_factor > max_size:
+                        size = (x2 - x1) * (y2 - y1)
+                        if size > max_size:
                             if correction_factor > 1:
                                 # increase y side
                                 center = y1 + (y2 - y1) // 2
@@ -376,7 +378,7 @@ class SimpleHRNet:
                             boxes[d] = [x1, y1, x2, y2]
                             images_tensor[d] = self.transform(image[y1:y2, x1:x2, ::-1])
                             images_conf[d] = conf
-                            max_size = correction_factor
+                            max_size = size
 
 
             images = images_tensor
