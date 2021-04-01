@@ -409,7 +409,7 @@ class SimpleHRNet:
                     # 2: confidences
                     pts[i, j, 0] = pt[0] * 1. / (self.resolution[0] // 4) * (boxes[i][3] - boxes[i][1]) + boxes[i][1]
                     pts[i, j, 1] = pt[1] * 1. / (self.resolution[1] // 4) * (boxes[i][2] - boxes[i][0]) + boxes[i][0]
-                    pts[i, j, 2] = confidence_tensor[i] #joint[pt]
+                    pts[i, j, 2] = confidence_tensor[i]*joint[pt]
 
             if self.multiperson:
                 print("Warining multiple person detected!")
