@@ -289,11 +289,14 @@ class SimpleHRNet:
     def fix_detection(self, image_detections, images):
         last_detection = None
         image = images[0]
+        confidence = []
         for d, detections in enumerate(image_detections):
             if detections is not None and len(detections) > 0:
                 last_detection = detections.clone()
+                confidence.append(1)
             else:
                 print("Yolo warning no people detected!", d)
+                confidence.append(0)
                 if last_detection == None:
                     print("Yolo warning 2: first frame not detected", d)
                     bound_len = min(image.shape[0], image.shape[1])
@@ -302,7 +305,7 @@ class SimpleHRNet:
                     detections = last_detection
                 image_detections[d] = detections.clone()
         
-        return image_detections
+        return image_detections, confidence
 
     def _predict_batch(self, images):
         if not self.multiperson:
@@ -334,11 +337,12 @@ class SimpleHRNet:
 
         else:
             image_detections = self.detector.predict(images)
-            image_detections = self.fix_detection(image_detections, images)
+            image_detections, confidence = self.fix_detection(image_detections, images)
             base_index = 0
             nof_people = int(np.sum([len(d) for d in image_detections]))
             boxes = np.empty((nof_people, 4), dtype=np.int32)
             images_tensor = torch.empty((nof_people, 3, self.resolution[0], self.resolution[1]))  # (height, width)
+            confidence_tensor = np.zeros((nof_people))
             heatmaps = np.zeros((nof_people, self.nof_joints, self.resolution[0] // 4, self.resolution[1] // 4),
                                 dtype=np.float32)
             
@@ -346,6 +350,7 @@ class SimpleHRNet:
                 #print(d,detections)
                 image = images[d]
                 #print(image.shape)
+                confident = confidence[d]
                 if detections is not None and len(detections) > 0:
 
                     for i, (x1, y1, x2, y2, conf, cls_conf, cls_pred) in enumerate(detections):
@@ -371,7 +376,7 @@ class SimpleHRNet:
 
                         boxes[base_index + i] = [x1, y1, x2, y2]
                         images_tensor[base_index + i] = self.transform(image[y1:y2, x1:x2, ::-1])
-
+                        confidence_tensor[base_index + i] = confident
                     base_index += len(detections)
 
             images = images_tensor
@@ -390,6 +395,7 @@ class SimpleHRNet:
                     )
                     for i in range(0, len(images), self.max_batch_size):
                         out[i:i + self.max_batch_size] = self.model(images[i:i + self.max_batch_size])
+                        
 
             out = out.detach().cpu().numpy()
             pts = np.empty((out.shape[0], out.shape[1], 3), dtype=np.float32)
@@ -403,9 +409,10 @@ class SimpleHRNet:
                     # 2: confidences
                     pts[i, j, 0] = pt[0] * 1. / (self.resolution[0] // 4) * (boxes[i][3] - boxes[i][1]) + boxes[i][1]
                     pts[i, j, 1] = pt[1] * 1. / (self.resolution[1] // 4) * (boxes[i][2] - boxes[i][0]) + boxes[i][0]
-                    pts[i, j, 2] = joint[pt]
+                    pts[i, j, 2] = confidence_tensor[i] #joint[pt]
 
             if self.multiperson:
+                print("Warining multiple person detected!")
                 # re-add the removed batch axis (n)
                 if self.return_heatmaps:
                     heatmaps_batch = []
